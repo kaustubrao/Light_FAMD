@@ -7,6 +7,7 @@ from .import util
 from . import mca
 from . import pca
 from sklearn.utils.validation import check_is_fitted
+from sklearn.preprocessing import StandardScaler, Normalizer
 
 
 class MFA(pca.PCA):
@@ -89,8 +90,15 @@ class MFA(pca.PCA):
             # If a column's cardinality is 1 then it's variance is 0 which can
             # can cause a division by 0
             X.loc[:, num] = (X.loc[:, num] - X.loc[:, num].mean()).apply(
-                        lambda x: x / (np.sqrt((x ** 2).sum()) or 1), 
+                        lambda x: x / (np.sqrt((x ** 2).sum()) or 1),
                         axis='rows')
+
+            # X.loc[:, num] = (X.loc[:, num] - X.loc[:, num].mean(axis=0)) / X.loc[:, num].std(axis=0)
+
+            # std = StandardScaler()
+            # X.loc[:, num] = StandardScaler().fit_transform(X.loc[:, num])
+            # normalizer_x = Normalizer(norm="l2").fit(X.loc[:, num])
+            # X.loc[:, num] = normalizer_x.transform(X.loc[:, num])
 
         return X
 
@@ -103,8 +111,10 @@ class MFA(pca.PCA):
             if self.partial_factor_analysis_[name].__class__.__name__ == 'MCA':
                 check_is_fitted(self.partial_factor_analysis_[name],'_usecols')
                 X_partial = self.partial_factor_analysis_[name].one_hot_.transform(X_partial).loc[:, self.partial_factor_analysis_[name]._usecols]
-            
-            X_partials.append(X_partial / self.partial_factor_analysis_[name].singular_values_[0])
+
+            X_partial.reset_index(drop=True, inplace=True)
+            temp = X_partial / self.partial_factor_analysis_[name].singular_values_[0]
+            X_partials.append(temp)
 
         X_global = pd.concat(X_partials, axis='columns')
         X_global.index = X.index
@@ -123,7 +133,12 @@ class MFA(pca.PCA):
 
     def _transform(self, X_global):
         """Returns the row principal coordinates."""
-        return  len(X_global) ** 0.5 * super()._transform(X_global)
+
+        transformed = super()._transform(X_global)
+        inv_tx = super().invert_transform(transformed)
+        tx_sqrt = len(X_global) ** 0.5 * transformed
+        inv_tx_sqrt = inv_tx / (len(X_global) ** 0.5)
+        return  tx_sqrt
     
     def fit_transform(self,X):
                 # Checks groups are provided
@@ -170,7 +185,8 @@ class MFA(pca.PCA):
         self._usecols= X_global.columns
         super().fit(X_global)  
 
-        return self._transform(X_global)
+        return X_global
+        # return self._transform(X_global)
     
         
     def column_correlation(self,X,same_input=True):
